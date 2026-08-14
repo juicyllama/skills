@@ -6,16 +6,20 @@ description: Triage a failing review-phase Playwright e2e run. Work through the 
 Canonical, adapter-agnostic procedure for triaging a failing **review-phase Playwright e2e** run. Any agent — Claude, Codex, or a human — follows this. Per-adapter entry points import it:
 
 - **Codex / generic agents:** referenced from [`AGENTS.md`](../AGENTS.md).
-- **Claude Code:** the `warroom-e2e-triage` skill (`.claude/skills/warroom-e2e-triage/SKILL.md`) points here.
+- **Claude Code:** use the repo-local `e2e-triage` skill entry point.
 - **Any runtime:** the `warroom pr review` CLI prints a triage directive pointing here when the run fails.
 
 ## When this runs
 
-`warroom pr review` runs the demo Playwright e2e after code review and **before** offering to merge. On failure it posts a `❌ Playwright e2e — FAILED` comment to the PR and **blocks the merge**. Work this procedure at that point. The merge stays blocked until triage is resolved.
+Two gates lead here, and both stay shut until triage is resolved:
+
+- **The review-phase e2e gate.** `warroom pr review` runs the demo Playwright e2e after code review and **before** offering to merge. On failure it posts a `❌ Playwright e2e — FAILED` comment to the PR and **blocks the merge**.
+- **A rejecting commit hook.** The review loop's own commit runs the child repo's `pre-commit` hook (often a full build+test+e2e). When that hook rejects the commit, War Room posts a `❌ pre-commit hook — FAILED` comment to the PR and triages here before retrying the commit. The review fix is **not** on the branch until the hook passes. Leave your fix **uncommitted** — War Room stages it and retries the commit, which re-runs the hook. A failure that was environmental needs no change at all: the retry re-runs the hook and a flake clears on its own.
 
 ## Non-negotiables
 
 - **Do not merge** while any e2e test is failing. Never bypass a red gate with `--admin` or by skipping e2e.
+- **Never bypass a commit hook** with `--no-verify`. The hook is the gate; healing means it passed, not that we went around it.
 - **Never edit a test just to make it green.** A test changes only when the behaviour it asserts changed *on purpose*, and that change is defensible and flagged for a human.
 - **Fix the root cause, not the symptom.** Match the surrounding code's conventions.
 - **Post your conclusion** (per failure) back to the PR so the human has the record.
@@ -37,7 +41,7 @@ Before blaming code or test, confirm the failure is real. On a shared/local dev 
 - **External-service throttling** — repeated full runs can throttle a shared Stripe/PayPal **test account**, after which flows stop resolving server-side (e.g. 3DS sessions stuck `ACTION_REQUIRED`/`pending`). Symptom: ALL tests of one external-dependent kind fail together in a full run but pass in isolation.
 - **Cold-compile / first-hit latency** under `next dev` when the worker pool hits a route cold.
 
-**Test for it:** re-run the specific failing test(s) **in isolation, single worker, on a settled machine** (`PLAYWRIGHT_WORKERS=1 playwright test <spec> -g "<name>"`). If it passes alone, the full-run failure was environmental — do **not** change code or tests. Instead: note it on the PR, and re-run `warroom pr review` when the environment is fresh (lower `WARROOM_E2E_WORKERS`, or `repos.yaml defaults.e2e_workers`, if the box is small).
+**Test for it:** re-run the specific failing test(s) **in isolation, single worker, on a settled machine**, wrapped in the workspace e2e gate so your run queues instead of stampeding a suite another session is timing: `warroom e2e-exec --label "<pr> e2e-triage" -- env PLAYWRIGHT_WORKERS=1 playwright test <spec> -g "<name>"`. The wrapper waits for the e2e slot AND for box pressure (load, live dev-stack count) and prints "been waiting Xm" notices while it does — a long wait means the box is busy, not that your run is broken, and "settled machine" is exactly what it is waiting for. If the test passes alone, the full-run failure was environmental — do **not** change code or tests. Instead: note it on the PR, and re-run `warroom pr review` when the environment is fresh (lower `WARROOM_E2E_WORKERS`, or `repos.yaml defaults.e2e_workers`, if the box is small).
 
 ### 3. Ensure tests are asserting outcomes, not mechanics
 
