@@ -72,16 +72,24 @@ When reviewing failed tests, always check and where possible improve tests to be
 For every failure that reproduces in isolation, decide:
 
 - **A. Regression** — the new code broke behaviour the test correctly protects.
-  → Fix the code. Re-run the affected spec to confirm green, then **re-run `warroom pr review`** to re-validate the full gate and re-open the merge prompt. This restarts the loop.
+  → Fix the code in the **driver** worktree, re-run the affected spec to confirm green, commit, push. War Room picks it up on its own: the review-phase gate re-runs `warroom pr review`; the merge-phase gate re-enters `warroom pr review` for you (the pushed delta is app code, so it is reviewed before anything merges). You do not run either yourself.
 
-- **B. Intended behaviour change** — the branch deliberately changed behaviour and the test asserts the old contract.
-  → Update the test to the new contract. Prefer asserting the **observable outcome** over internal wire calls. **Explain WHY on the PR** and **keep the merge blocked pending human sign-off** — a changed test is a changed contract and needs a human's eyes.
+- **B. Intended behaviour change, or a stale spec/helper/fixture** — the branch deliberately changed behaviour and the test asserts the old contract, or the harness (stub, fixture, helper) lags the product.
+  → Update the test to the new contract in the worktree it lives in (driver or demo companion). Prefer asserting the **observable outcome** over internal wire calls. Commit, push, and **explain WHY on the PR** — a changed test is a changed contract, and that comment is what a reviewer reads. The gate re-runs on your pushed delta and the merge continues if it is green; the edited spec is named in the gate's summary so the reviewer sees it on the PR.
 
-- **C. Environmental (from step 2)** — not a code or test defect. Flag on the PR, re-run fresh; do not change code or tests.
+- **C. Environmental (from step 2)** — not a code or test defect. Flag on the PR; do not change code or tests. War Room re-runs the suite itself.
 
-### 5. Report and gate
+### 5. What War Room does with your commits
 
-- Summarise per failure on the PR: bucket (A/B/C), root cause, action taken.
-- All **A** and fixed → re-run `warroom pr review`.
-- Any **B** → leave the merge blocked; hand back to the human to approve the test change.
-- All **C** → re-run `warroom pr review` on a settled environment; escalate if it keeps failing (points to real infra: single-dev-server throughput, test-account limits).
+After you exit, War Room diffs each gate worktree against where it stood when you started:
+
+- **Nothing committed** → read as an environmental call; the suite re-runs as-is.
+- **Only test files** (`*.spec.*`, `*.test.*`, `tests/`, `e2e/`) **and/or static-analysis config** (knip, biome, eslint, prettier, lint-staged, editorconfig) → pushed, suite re-runs, a green result resumes the merge automatically.
+- **Anything else** (app code, package manifests, lockfiles, CI) → pushed, then the merge stops and the PR goes back through `warroom pr review`. So keep app code out of the demo companion, and out of the driver unless it *is* the regression fix.
+- If the repo's pre-commit hook rejects your commit on a **pre-existing** finding unrelated to your fix (e.g. knip flags a dependency you did not add), fix it in the tooling config rather than bypassing the hook — that stays resumable.
+- **Commit everything you change.** Uncommitted edits are folded into a follow-up commit by War Room, but only on the PR's own branch, and a hook that rejects them leaves the gate dirty.
+
+### 6. Report
+
+- Summarise per failure on the PR: bucket (A/B/C), root cause, action taken — one comment, not one per spec.
+- **C** that keeps failing on a settled environment → escalate: it points to real infra (single-dev-server throughput, test-account limits), not to this PR.
