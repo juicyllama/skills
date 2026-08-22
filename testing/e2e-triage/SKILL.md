@@ -23,6 +23,7 @@ Two gates lead here, and both stay shut until triage is resolved:
 - **Never edit a test just to make it green.** A test changes only when the behaviour it asserts changed *on purpose*, and that change is defensible and flagged for a human.
 - **Fix the root cause, not the symptom.** Match the surrounding code's conventions.
 - **Post your conclusion** (per failure) back to the PR so the human has the record.
+- **Never touch the dev stack.** Do not stop, restart, reclaim, kill, or reap its processes (`dev-stack stop|reclaim|down`, `warroom dev down|restart`, `kill`, `WARROOM_LANE_TAKEOVER`, `reapProcessesUnder`, …). Stack repair is War Room's job, not the triage's: a triage that reaches into the stack can strand it (2026-08-22: a sandboxed triage ran `dev-stack stop`, could not signal a single process, deleted the lane record anyway, and every later start refused the still-running stack as a stranger's). If the ENVIRONMENT is what failed — the stack did not start, a port was held, the tunnel was down — classify it as environmental, describe exactly what you saw, and stop; the gate heals and re-runs on its own.
 
 ## Process
 
@@ -78,7 +79,7 @@ For every failure that reproduces in isolation, decide:
 - **B. Intended behaviour change, or a stale spec/helper/fixture** — the branch deliberately changed behaviour and the test asserts the old contract, or the harness (stub, fixture, helper) lags the product.
   → Update the test to the new contract in the worktree it lives in (driver or demo companion). Prefer asserting the **observable outcome** over internal wire calls. Commit, push, and **explain WHY on the PR** — a changed test is a changed contract, and that comment is what a reviewer reads. The gate re-runs on your pushed delta and the merge continues if it is green; the edited spec is named in the gate's summary so the reviewer sees it on the PR.
 
-- **C. Environmental (from step 2)** — not a code or test defect. Flag on the PR; do not change code or tests. War Room re-runs the suite itself.
+- **C. Environmental (from step 2)** — not a code or test defect. Flag on the PR; do not change code or tests. War Room re-runs the suite itself. This includes a stack that did not come up at all (`NOT starting … port(s) are held`, EADDRINUSE, tunnel down): say so and leave the stack alone — never stop or take it over yourself.
 
 ### 5. What War Room does with your commits
 
@@ -86,6 +87,7 @@ After you exit, War Room diffs each gate worktree against where it stood when yo
 
 - **Nothing committed** → read as an environmental call; the suite re-runs as-is.
 - **Only test files** (`*.spec.*`, `*.test.*`, `tests/`, `e2e/`) **and/or static-analysis config** (knip, biome, eslint, prettier, lint-staged, editorconfig) → pushed, suite re-runs, a green result resumes the merge automatically.
+- **On a companion worktree** (the demo suite while a backend PR merges, say) such a test/tooling-only delta is pushed on the companion's branch — a branch named after the driver PR, in a repo with no PR for it — and once the driver PR merges, War Room opens (or reuses) a PR for it in that repo and merges it through the normal gates, noting the outcome on the driver PR (`🧩 Companion triage deltas`). You do not open that PR yourself. App code on a companion is reported for its own review instead of landing.
 - **Anything else** (app code, package manifests, lockfiles, CI) → pushed, then the merge stops and the PR goes back through `warroom pr review`. So keep app code out of the demo companion, and out of the driver unless it *is* the regression fix.
 - If the repo's pre-commit hook rejects your commit on a **pre-existing** finding unrelated to your fix (e.g. knip flags a dependency you did not add), fix it in the tooling config rather than bypassing the hook — that stays resumable.
 - **Commit everything you change.** Uncommitted edits are folded into a follow-up commit by War Room, but only on the PR's own branch, and a hook that rejects them leaves the gate dirty.
